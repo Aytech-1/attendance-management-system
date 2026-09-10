@@ -1,0 +1,159 @@
+.dashboardHeader {
+    width: 100%;
+    padding: 24px;
+    background: linear-gradient(135deg, #ffffff 60%, #ebf5ec 100%);
+    border: 1px solid rgba(0, 75, 41, 0.12);
+    border-radius: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+.headerLeft {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.headerIcon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #004B29;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 75, 41, 0.2);
+}
+
+.headerText h2 {
+    font-size: 24px;
+    font-weight: 800;
+    color: #004B29;
+    letter-spacing: -0.01em;
+}
+
+.headerText p {
+    font-size: 13.5px;
+    color: #4b5563;
+    max-width: 600px;
+    margin-top: 4px;
+    line-height: 1.5;
+}
+
+/* STATISTICS CARD REUSABLE STYLES */
+.statisticsCard {
+    width: 100%;
+    min-width: 240px;
+    min-height: 60px;
+    border-radius: 14px;
+    cursor: pointer;
+    flex-grow: 1;
+    padding: 20px 22px;
+    border: 1px solid rgba(0, 75, 41, 0.1);
+    box-shadow: 0px 3px 12px rgba(0, 0, 0, 0.03);
+    background: #ffffff;
+    transition: all 0.25s ease-in-out;
+}
+
+.statisticsCard:hover {
+    transform: translateY(-3px);
+    border-color: rgba(0, 75, 41, 0.25);
+    box-shadow: 0px 8px 20px rgba(0, 75, 41, 0.08);
+}
+
+.statisticsInner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.statisticsText {
+    display: flex;
+    flex-direction: column;
+}
+
+.statisticsText h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.statisticsText p {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 4px;
+}
+
+.statisticsValue {
+    font-size: 28px;
+    font-weight: 800;
+    color: #004B29;
+    margin-top: 8px;
+}
+
+.statisticsIcon {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #ebf5ec;
+    border: 1px solid rgba(0, 75, 41, 0.15);
+    color: #004B29;
+}
+
+/* staff */
+.staffHeader {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   gap: 12px;
+   background: transparent;
+}
+
+.searchInput {
+    border-radius: 8px;
+    padding: 9px 18px;
+    background: var(--white-color);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    transition: border-color 0.2s ease;
+}
+
+.searchInput:focus-within {
+    border-color: #004B29;
+}
+
+.input {
+    border: none;
+    outline: none;
+    font-size: 13px;
+    color: #111827;
+}
+
+.addNew {
+   border-radius: 8px;
+   padding: 10px 18px;
+   border: none;
+   background: #004B29;
+   color: var(--white-color);
+   font-size: 12px;
+   font-weight: 700;
+   cursor: pointer;
+   display: flex;
+   justify-content: center;
+   align-items: center;
+   gap: 6px;
+   transition: all 0.2s ease-in-out;
+   box-shadow: 0 2px 6px rgba(0, 75, 41, 0.18);
+}
+
+.addNew:hover {
+   background: #003C1F;
+   transform: translateY(-1px);
+}

@@ -1,0 +1,52 @@
+.formGroup {
+    position: relative;
+    width: 100%;
+}
+
+.floatingInput {
+    width: 100%;
+    padding: 15px 20px;
+    height: 55px;
+    font-size: 16px;
+    color: var( --text-color);
+    border: 1px solid #c6c6c6;
+    border-radius: 5px;
+    outline: none;
+    background-color: #ffffff;
+    transition: border-color 0.3s;
+}
+
+.floatingInput:focus {
+    border-color: var(--primary-color);
+}
+
+.floatingLabel {
+    position: absolute;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%); 
+    padding: 0 10px;
+    font-size: 12px;
+    color: #c6c6c6;
+    pointer-events: none;
+    transition: 0.3s ease all;
+    background-color: white;
+}
+
+.floatingInput:focus ~ .floatingLabel,
+.floatingInput:not(:placeholder-shown) ~ .floatingLabel {
+    top: -7px;
+    transform: none; 
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    background-color: var(--primary-color);
+    border-radius: 3px;
+    padding: 3px 5px;
+}
+
+.select {
+  appearance: none;        /* For modern browsers */
+  -webkit-appearance: none; /* For Safari/Chrome */
+  -moz-appearance: none;    /* For Firefox */
+}

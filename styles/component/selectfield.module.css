@@ -1,0 +1,72 @@
+.formGroup {
+    position: relative;
+    width: 100%;
+}
+
+.inputBox {
+    width: 100%;
+    padding: 15px 20px;
+    height: 55px;
+    font-size: 16px;
+    border: 1px solid #c6c6c6;
+    border-radius: 5px;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.inputBox:focus-within {
+    border-color: var(--primary-color);
+}
+
+.floatingLabel {
+    position: absolute;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0 10px;
+    font-size: 12px;
+    color: #c6c6c6;
+    background: #fff;
+    transition: 0.3s ease all;
+}
+
+.activeLabel {
+    top: 1px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--primary-color);
+    border-radius: 3px;
+    padding: 3px 5px;
+}
+
+.dropdown {
+    position: absolute;
+    top: 60px;
+    width: 100%;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 10;
+}
+
+.searchInput {
+    width: 100%;
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    outline: none;
+}
+
+.option {
+    padding: 10px 15px;
+    cursor: pointer;
+}
+
+.option:hover {
+    background: #f5f5f5;
+}
