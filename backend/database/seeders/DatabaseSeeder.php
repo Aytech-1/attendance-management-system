@@ -55,8 +55,8 @@ class DatabaseSeeder extends Seeder
         );
 
         // Initial Administrator User (environment-driven in production, default in local/testing)
-        $adminEmail = env('ADMIN_EMAIL', app()->environment('local', 'testing') ? 'admin@gmail.com' : null);
-        $adminPassword = env('ADMIN_PASSWORD', app()->environment('local', 'testing') ? 'password' : null);
+        $adminEmail = config('app.admin_email', app()->environment('local', 'testing') ? 'admin@gmail.com' : null);
+        $adminPassword = config('app.admin_password', app()->environment('local', 'testing') ? 'password' : null);
 
         if ($adminEmail && $adminPassword) {
             $superAdmin = User::updateOrCreate(

@@ -123,4 +123,17 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Initial Super Administrator Credentials
+    |--------------------------------------------------------------------------
+    |
+    | Environment variables used for seeding the initial Super Administrator
+    | account during production database initialization.
+    |
+    */
+
+    'admin_email' => env('ADMIN_EMAIL'),
+    'admin_password' => env('ADMIN_PASSWORD'),
+
 ];
