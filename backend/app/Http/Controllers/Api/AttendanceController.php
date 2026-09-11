@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Carbon;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AttendanceController extends Controller
@@ -84,30 +85,35 @@ class AttendanceController extends Controller
             ], 400);
         }
 
-        // 4. Exact Session Time Window Validation (Zero Grace Period)
-        $currentTimestamp = time();
-        $sessionDateStr = $session->date ? $session->date->format('Y-m-d') : date('Y-m-d');
-        
-        $sessionStartTime = strtotime("{$sessionDateStr} {$session->start_time}");
-        $sessionEndTime = strtotime("{$sessionDateStr} {$session->end_time}");
+        // 4. Exact Session Time Window Validation (Zero Grace Period) using explicit Africa/Lagos Carbon
+        $timezone = config('app.timezone', 'Africa/Lagos');
+        $now = Carbon::now($timezone);
 
-        // If today is not session date and session date is strictly enforced
-        if ($session->date && date('Y-m-d') !== $sessionDateStr) {
-            if ($currentTimestamp < $sessionStartTime) {
+        $sessionDateStr = $session->date ? $session->date->format('Y-m-d') : $now->format('Y-m-d');
+        
+        $startTimeStr = strlen($session->start_time) === 5 ? "{$session->start_time}:00" : $session->start_time;
+        $endTimeStr = strlen($session->end_time) === 5 ? "{$session->end_time}:00" : $session->end_time;
+
+        $sessionStartTime = Carbon::createFromFormat('Y-m-d H:i:s', "{$sessionDateStr} {$startTimeStr}", $timezone);
+        $sessionEndTime = Carbon::createFromFormat('Y-m-d H:i:s', "{$sessionDateStr} {$endTimeStr}", $timezone);
+
+        // If today is not session date in business timezone and session date is strictly enforced
+        if ($session->date && $now->format('Y-m-d') !== $sessionDateStr) {
+            if ($now->lt($sessionStartTime)) {
                 return response()->json(['message' => 'Lecture session has not started.'], 400);
             }
             return response()->json(['message' => 'Lecture session has ended.'], 400);
         }
 
         // Strict Check 1: current_server_time < session_start_time -> REJECT
-        if ($sessionStartTime && ($currentTimestamp < $sessionStartTime)) {
+        if ($now->lt($sessionStartTime)) {
             return response()->json([
                 'message' => 'Lecture session has not started.'
             ], 400);
         }
 
         // Strict Check 2: current_server_time >= session_end_time -> REJECT (Zero grace period)
-        if ($sessionEndTime && ($currentTimestamp >= $sessionEndTime)) {
+        if ($now->gte($sessionEndTime)) {
             return response()->json([
                 'message' => 'Lecture session has ended.'
             ], 400);
@@ -168,7 +174,8 @@ class AttendanceController extends Controller
 
         // 8. Determine Status: PRESENT vs LATE (Late threshold: 15 mins after start time)
         $attendanceStatus = 'PRESENT';
-        if ($sessionStartTime && ($currentTimestamp > ($sessionStartTime + (15 * 60)))) {
+        $lateThreshold = (clone $sessionStartTime)->addMinutes(15);
+        if ($now->gt($lateThreshold)) {
             $attendanceStatus = 'LATE';
         }
 

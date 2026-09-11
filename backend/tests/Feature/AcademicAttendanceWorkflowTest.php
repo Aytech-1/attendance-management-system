@@ -15,6 +15,7 @@ use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 
 class AcademicAttendanceWorkflowTest extends TestCase
 {
@@ -597,5 +598,73 @@ class AcademicAttendanceWorkflowTest extends TestCase
             ->deleteJson("/api/v1/academic-sessions/{$this->academicSession->id}");
 
         $response->assertStatus(422);
+    }
+
+    /** Test 19: Africa/Lagos business timezone session time window boundaries and UTC equivalents */
+    public function test_africa_lagos_timezone_session_boundary_and_utc_equivalents()
+    {
+        // Session created for 08:00:00 - 10:00:00 Africa/Lagos
+        $session = LectureSession::create([
+            'course_id' => $this->course->id,
+            'department_id' => $this->department->id,
+            'academic_session_id' => $this->academicSession->id,
+            'lecturer_id' => $this->lecturerUser->id,
+            'date' => '2026-09-11',
+            'start_time' => '08:00:00',
+            'end_time' => '10:00:00',
+            'location' => 'Room 201',
+            'status' => 'ACTIVE',
+        ]);
+
+        $token = Crypt::encryptString(json_encode([
+            'session_id' => $session->id,
+            'timestamp' => time(),
+        ]));
+
+        // 1. 07:59:59 WAT -> NOT STARTED (400)
+        Carbon::setTestNow(Carbon::parse('2026-09-11 07:59:59', 'Africa/Lagos'));
+        $res1 = $this->actingAs($this->studentUser)->postJson('/api/v1/attendance/scan', ['token' => $token]);
+        $res1->assertStatus(400)->assertJsonFragment(['message' => 'Lecture session has not started.']);
+
+        // 2. 08:00:00 WAT -> ACTIVE / SUCCESS (200)
+        Carbon::setTestNow(Carbon::parse('2026-09-11 08:00:00', 'Africa/Lagos'));
+        $res2 = $this->actingAs($this->studentUser)->postJson('/api/v1/attendance/scan', ['token' => $token]);
+        $res2->assertStatus(200)->assertJsonFragment(['success' => true]);
+
+        // Clean up attendance record for next test moments
+        Attendance::where('lecture_session_id', $session->id)->delete();
+
+        // 3. 09:00:00 WAT -> ACTIVE / SUCCESS (200)
+        Carbon::setTestNow(Carbon::parse('2026-09-11 09:00:00', 'Africa/Lagos'));
+        $res3 = $this->actingAs($this->studentUser)->postJson('/api/v1/attendance/scan', ['token' => $token]);
+        $res3->assertStatus(200)->assertJsonFragment(['success' => true]);
+
+        Attendance::where('lecture_session_id', $session->id)->delete();
+
+        // 4. 09:59:59 WAT -> ACTIVE / SUCCESS (200)
+        Carbon::setTestNow(Carbon::parse('2026-09-11 09:59:59', 'Africa/Lagos'));
+        $res4 = $this->actingAs($this->studentUser)->postJson('/api/v1/attendance/scan', ['token' => $token]);
+        $res4->assertStatus(200)->assertJsonFragment(['success' => true]);
+
+        Attendance::where('lecture_session_id', $session->id)->delete();
+
+        // 5. 10:00:00 WAT -> ENDED (400)
+        Carbon::setTestNow(Carbon::parse('2026-09-11 10:00:00', 'Africa/Lagos'));
+        $res5 = $this->actingAs($this->studentUser)->postJson('/api/v1/attendance/scan', ['token' => $token]);
+        $res5->assertStatus(400)->assertJsonFragment(['message' => 'Lecture session has ended.']);
+
+        // 6. Equivalent UTC Instants: 07:00:00 UTC = 08:00:00 WAT (ACTIVE)
+        Carbon::setTestNow(Carbon::parse('2026-09-11 07:00:00', 'UTC'));
+        $resUtcActive = $this->actingAs($this->studentUser)->postJson('/api/v1/attendance/scan', ['token' => $token]);
+        $resUtcActive->assertStatus(200)->assertJsonFragment(['success' => true]);
+
+        Attendance::where('lecture_session_id', $session->id)->delete();
+
+        // 7. Equivalent UTC Instants: 09:00:00 UTC = 10:00:00 WAT (ENDED)
+        Carbon::setTestNow(Carbon::parse('2026-09-11 09:00:00', 'UTC'));
+        $resUtcEnded = $this->actingAs($this->studentUser)->postJson('/api/v1/attendance/scan', ['token' => $token]);
+        $resUtcEnded->assertStatus(400)->assertJsonFragment(['message' => 'Lecture session has ended.']);
+
+        Carbon::setTestNow(); // Reset test clock
     }
 }
