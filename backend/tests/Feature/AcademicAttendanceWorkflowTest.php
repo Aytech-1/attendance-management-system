@@ -231,7 +231,37 @@ class AcademicAttendanceWorkflowTest extends TestCase
         ]);
     }
 
-    /** Test 6: Duplicate attendance scan is rejected with 409 Conflict */
+    /** Test 6: QR older than 60 seconds remains valid while lecture session is active */
+    public function test_qr_older_than_60s_remains_valid_while_session_active()
+    {
+        $session = LectureSession::create([
+            'course_id' => $this->course->id,
+            'department_id' => $this->department->id,
+            'academic_session_id' => $this->academicSession->id,
+            'lecturer_id' => $this->lecturerUser->id,
+            'date' => date('Y-m-d'),
+            'start_time' => '00:00:00',
+            'end_time' => '23:59:59',
+            'location' => 'Room 101B',
+            'status' => 'ACTIVE',
+        ]);
+
+        // Token created 300 seconds (5 minutes) ago
+        $oldToken = Crypt::encryptString(json_encode([
+            'session_id' => $session->id,
+            'course_code' => $this->course->code,
+            'timestamp' => time() - 300,
+            'static' => false,
+        ]));
+
+        $response = $this->actingAs($this->studentUser)
+            ->postJson('/api/v1/attendance/scan', ['token' => $oldToken]);
+
+        $response->assertStatus(200)
+            ->assertJsonFragment(['success' => true]);
+    }
+
+    /** Test 7: Duplicate attendance scan is rejected with 409 Conflict */
     public function test_duplicate_attendance_scan_rejected()
     {
         $session = LectureSession::create([
@@ -260,10 +290,11 @@ class AcademicAttendanceWorkflowTest extends TestCase
         $secondResponse = $this->actingAs($this->studentUser)
             ->postJson('/api/v1/attendance/scan', ['token' => $token]);
 
-        $secondResponse->assertStatus(409);
+        $secondResponse->assertStatus(409)
+            ->assertJsonFragment(['message' => 'Attendance has already been recorded.']);
     }
 
-    /** Test 7: Scan rejected when academic session is inactive */
+    /** Test 8: Scan rejected when academic session is inactive */
     public function test_inactive_academic_session_scan_rejected()
     {
         $inactiveAcademic = AcademicSession::create([
@@ -292,10 +323,11 @@ class AcademicAttendanceWorkflowTest extends TestCase
         $response = $this->actingAs($this->studentUser)
             ->postJson('/api/v1/attendance/scan', ['token' => $token]);
 
-        $response->assertStatus(400);
+        $response->assertStatus(400)
+            ->assertJsonFragment(['message' => 'Lecture session has ended.']);
     }
 
-    /** Test 8: Scan rejected when student is from different department */
+    /** Test 9: Scan rejected when student is from different department */
     public function test_student_from_different_department_rejected()
     {
         $session = LectureSession::create([
@@ -318,10 +350,206 @@ class AcademicAttendanceWorkflowTest extends TestCase
         $response = $this->actingAs($this->otherStudentUser)
             ->postJson('/api/v1/attendance/scan', ['token' => $token]);
 
-        $response->assertStatus(403);
+        $response->assertStatus(403)
+            ->assertJsonFragment(['message' => 'You are not authorized for this course.']);
     }
 
-    /** Test 9: Lecturer cannot end or generate QR for another lecturer session (IDOR Protection) */
+    /** Test 10: Scan rejected when unauthenticated */
+    public function test_unauthenticated_user_scan_rejected()
+    {
+        $session = LectureSession::create([
+            'course_id' => $this->course->id,
+            'department_id' => $this->department->id,
+            'academic_session_id' => $this->academicSession->id,
+            'lecturer_id' => $this->lecturerUser->id,
+            'date' => date('Y-m-d'),
+            'start_time' => '00:00:00',
+            'end_time' => '23:59:59',
+            'location' => 'Room 104B',
+            'status' => 'ACTIVE',
+        ]);
+
+        $token = Crypt::encryptString(json_encode([
+            'session_id' => $session->id,
+            'timestamp' => time(),
+        ]));
+
+        $response = $this->postJson('/api/v1/attendance/scan', ['token' => $token]);
+        $response->assertStatus(401);
+    }
+
+    /** Test 11: Tampered/invalid QR code rejected */
+    public function test_tampered_qr_scan_rejected()
+    {
+        $response = $this->actingAs($this->studentUser)
+            ->postJson('/api/v1/attendance/scan', ['token' => 'invalid-tampered-token-string']);
+
+        $response->assertStatus(400)
+            ->assertJsonFragment(['message' => 'Invalid QR code.']);
+    }
+
+    /** Test 12: Scan rejected after session END TIME */
+    public function test_scan_rejected_after_session_end_time()
+    {
+        $session = LectureSession::create([
+            'course_id' => $this->course->id,
+            'department_id' => $this->department->id,
+            'academic_session_id' => $this->academicSession->id,
+            'lecturer_id' => $this->lecturerUser->id,
+            'date' => date('Y-m-d'),
+            'start_time' => '00:00:00',
+            'end_time' => '00:00:01', // Already passed
+            'location' => 'Room 105',
+            'status' => 'ACTIVE',
+        ]);
+
+        $token = Crypt::encryptString(json_encode([
+            'session_id' => $session->id,
+            'timestamp' => time(),
+        ]));
+
+        $response = $this->actingAs($this->studentUser)
+            ->postJson('/api/v1/attendance/scan', ['token' => $token]);
+
+        $response->assertStatus(400)
+            ->assertJsonFragment(['message' => 'Lecture session has ended.']);
+    }
+
+    /** Test 13: Scan rejected before session START TIME */
+    public function test_scan_rejected_before_session_start_time()
+    {
+        $session = LectureSession::create([
+            'course_id' => $this->course->id,
+            'department_id' => $this->department->id,
+            'academic_session_id' => $this->academicSession->id,
+            'lecturer_id' => $this->lecturerUser->id,
+            'date' => date('Y-m-d'),
+            'start_time' => '23:58:00',
+            'end_time' => '23:59:59',
+            'location' => 'Room 107',
+            'status' => 'ACTIVE',
+        ]);
+
+        $token = Crypt::encryptString(json_encode([
+            'session_id' => $session->id,
+            'timestamp' => time(),
+        ]));
+
+        $response = $this->actingAs($this->studentUser)
+            ->postJson('/api/v1/attendance/scan', ['token' => $token]);
+
+        $response->assertStatus(400)
+            ->assertJsonFragment(['message' => 'Lecture session has not started.']);
+    }
+
+    /** Test 14: Geofence check rejects student outside radius */
+    public function test_geofence_rejects_student_outside_radius()
+    {
+        $session = LectureSession::create([
+            'course_id' => $this->course->id,
+            'department_id' => $this->department->id,
+            'academic_session_id' => $this->academicSession->id,
+            'lecturer_id' => $this->lecturerUser->id,
+            'date' => date('Y-m-d'),
+            'start_time' => '00:00:00',
+            'end_time' => '23:59:59',
+            'location' => 'ICT Lab',
+            'latitude' => 6.5244,
+            'longitude' => 3.3792,
+            'geofence_radius' => 50, // 50 meters
+            'status' => 'ACTIVE',
+        ]);
+
+        $token = Crypt::encryptString(json_encode([
+            'session_id' => $session->id,
+            'timestamp' => time(),
+        ]));
+
+        // Student coordinates ~5km away
+        $response = $this->actingAs($this->studentUser)
+            ->postJson('/api/v1/attendance/scan', [
+                'token' => $token,
+                'latitude' => 6.6000,
+                'longitude' => 3.3500,
+            ]);
+
+        $response->assertStatus(400)
+            ->assertJsonFragment(['message' => 'You are outside the authorized attendance location.']);
+    }
+
+    /** Test 15: Geofence check rejects missing GPS when venue is configured */
+    public function test_geofence_rejects_missing_gps_when_venue_configured()
+    {
+        $session = LectureSession::create([
+            'course_id' => $this->course->id,
+            'department_id' => $this->department->id,
+            'academic_session_id' => $this->academicSession->id,
+            'lecturer_id' => $this->lecturerUser->id,
+            'date' => date('Y-m-d'),
+            'start_time' => '00:00:00',
+            'end_time' => '23:59:59',
+            'location' => 'ICT Lab 2',
+            'latitude' => 6.5244,
+            'longitude' => 3.3792,
+            'geofence_radius' => 50,
+            'status' => 'ACTIVE',
+        ]);
+
+        $token = Crypt::encryptString(json_encode([
+            'session_id' => $session->id,
+            'timestamp' => time(),
+        ]));
+
+        // Student submits scan with NO latitude/longitude
+        $response = $this->actingAs($this->studentUser)
+            ->postJson('/api/v1/attendance/scan', [
+                'token' => $token,
+            ]);
+
+        $response->assertStatus(400)
+            ->assertJsonFragment(['message' => 'You are outside the authorized attendance location.']);
+    }
+
+    /** Test 16: IDOR attempt to supply foreign student_id is ignored */
+    public function test_idor_student_id_override_ignored()
+    {
+        $session = LectureSession::create([
+            'course_id' => $this->course->id,
+            'department_id' => $this->department->id,
+            'academic_session_id' => $this->academicSession->id,
+            'lecturer_id' => $this->lecturerUser->id,
+            'date' => date('Y-m-d'),
+            'start_time' => '00:00:00',
+            'end_time' => '23:59:59',
+            'location' => 'Room 108',
+            'status' => 'ACTIVE',
+        ]);
+
+        $token = Crypt::encryptString(json_encode([
+            'session_id' => $session->id,
+            'timestamp' => time(),
+        ]));
+
+        // Attempting to pass student_id = 99999 in payload
+        $response = $this->actingAs($this->studentUser)
+            ->postJson('/api/v1/attendance/scan', [
+                'token' => $token,
+                'student_id' => 99999,
+            ]);
+
+        $response->assertStatus(200);
+
+        // Verification: attendance is recorded under authenticated user's ID
+        $this->assertDatabaseHas('attendances', [
+            'student_id' => $this->studentUser->id,
+            'lecture_session_id' => $session->id,
+        ]);
+        $this->assertDatabaseMissing('attendances', [
+            'student_id' => 99999,
+        ]);
+    }
+
+    /** Test 17: Lecturer cannot end or generate QR for another lecturer session (RBAC Protection) */
     public function test_lecturer_cannot_modify_other_lecturer_session()
     {
         $otherLecturer = User::create([
@@ -350,7 +578,7 @@ class AcademicAttendanceWorkflowTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** Test 10: Deletion protection on academic session with dependent records */
+    /** Test 18: Deletion protection on academic session with dependent records */
     public function test_cannot_delete_academic_session_with_dependent_records()
     {
         $session = LectureSession::create([
@@ -369,32 +597,5 @@ class AcademicAttendanceWorkflowTest extends TestCase
             ->deleteJson("/api/v1/academic-sessions/{$this->academicSession->id}");
 
         $response->assertStatus(422);
-    }
-
-    /** Test 11: Scan rejected when session is scheduled for future time */
-    public function test_future_session_scan_rejected()
-    {
-        $session = LectureSession::create([
-            'course_id' => $this->course->id,
-            'department_id' => $this->department->id,
-            'academic_session_id' => $this->academicSession->id,
-            'lecturer_id' => $this->lecturerUser->id,
-            'date' => date('Y-m-d'),
-            'start_time' => '23:50:00',
-            'end_time' => '23:59:59',
-            'location' => 'Room 107',
-            'status' => 'ACTIVE',
-        ]);
-
-        $token = Crypt::encryptString(json_encode([
-            'session_id' => $session->id,
-            'timestamp' => time(),
-        ]));
-
-        $response = $this->actingAs($this->studentUser)
-            ->postJson('/api/v1/attendance/scan', ['token' => $token]);
-
-        $response->assertStatus(400)
-            ->assertJsonFragment(['message' => "Attendance session has not started. Please wait until 23:50:00."]);
     }
 }

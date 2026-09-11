@@ -47,7 +47,7 @@ class AttendanceController extends Controller
             return response()->json(['message' => 'Your student account is suspended or inactive.'], 403);
         }
 
-        // 1. Decrypt secure token payload
+        // 1. Decrypt secure token payload & verify cryptographic integrity
         try {
             $decryptedPayload = Crypt::decryptString($request->token);
             $data = json_decode($decryptedPayload, true);
@@ -59,48 +59,32 @@ class AttendanceController extends Controller
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
             ]);
-            return response()->json(['message' => 'Invalid QR Code. Please scan a valid classroom QR Code.'], 400);
+            return response()->json(['message' => 'Invalid QR code.'], 400);
         }
 
         $sessionId = $data['session_id'] ?? null;
         if (!$sessionId) {
-            return response()->json(['message' => 'Invalid QR Code token structure.'], 400);
-        }
-
-        // Validate token freshness for dynamic rotating QR codes
-        $isStaticToken = isset($data['static']) && $data['static'] === true;
-        if (!$isStaticToken && isset($data['timestamp'])) {
-            $tokenAge = time() - (int)$data['timestamp'];
-            if ($tokenAge > 60 || $tokenAge < -10) {
-                AuditLog::create([
-                    'user_id' => $user->id,
-                    'action' => 'ATTENDANCE_SCAN_FAILED',
-                    'description' => "Student {$user->email} submitted an expired dynamic QR token (age: {$tokenAge}s).",
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                ]);
-                return response()->json(['message' => 'QR Code has expired. Please scan the current live QR Code projected in class.'], 400);
-            }
+            return response()->json(['message' => 'Invalid QR code.'], 400);
         }
 
         // 2. Fetch and Validate Lecture Session
         $session = LectureSession::with(['course', 'department', 'academicSession'])->find($sessionId);
         if (!$session) {
-            return response()->json(['message' => 'Lecture session not found.'], 404);
+            return response()->json(['message' => 'Invalid QR code.'], 400);
         }
 
         if ($session->status !== 'ACTIVE') {
-            return response()->json(['message' => 'This lecture session is closed or inactive.'], 400);
+            return response()->json(['message' => 'Lecture session has ended.'], 400);
         }
 
         // 3. Validate Academic Session Status
         if ($session->academicSession && $session->academicSession->status !== 'ACTIVE') {
             return response()->json([
-                'message' => "This lecture session belongs to an inactive academic session ({$session->academicSession->name})."
+                'message' => 'Lecture session has ended.'
             ], 400);
         }
 
-        // 4. Time Window Validation
+        // 4. Exact Session Time Window Validation (Zero Grace Period)
         $currentTimestamp = time();
         $sessionDateStr = $session->date ? $session->date->format('Y-m-d') : date('Y-m-d');
         
@@ -109,29 +93,30 @@ class AttendanceController extends Controller
 
         // If today is not session date and session date is strictly enforced
         if ($session->date && date('Y-m-d') !== $sessionDateStr) {
+            if ($currentTimestamp < $sessionStartTime) {
+                return response()->json(['message' => 'Lecture session has not started.'], 400);
+            }
+            return response()->json(['message' => 'Lecture session has ended.'], 400);
+        }
+
+        // Strict Check 1: current_server_time < session_start_time -> REJECT
+        if ($sessionStartTime && ($currentTimestamp < $sessionStartTime)) {
             return response()->json([
-                'message' => "This lecture session was scheduled for {$sessionDateStr} and is not active today."
+                'message' => 'Lecture session has not started.'
             ], 400);
         }
 
-        // Check if session has not started (allow 5-min early buffer)
-        if ($sessionStartTime && ($currentTimestamp < ($sessionStartTime - 300))) {
+        // Strict Check 2: current_server_time >= session_end_time -> REJECT (Zero grace period)
+        if ($sessionEndTime && ($currentTimestamp >= $sessionEndTime)) {
             return response()->json([
-                'message' => "Attendance session has not started. Please wait until {$session->start_time}."
+                'message' => 'Lecture session has ended.'
             ], 400);
         }
 
-        // Check if session has closed (allow 5-min grace period)
-        if ($sessionEndTime && ($currentTimestamp > ($sessionEndTime + 300))) {
-            return response()->json([
-                'message' => "Attendance session has closed for this lecture."
-            ], 400);
-        }
-
-        // 5. Student Eligibility & Department Match
+        // 5. Student Course / Department Authorization
         if ($profile->department_id && $session->department_id && $profile->department_id !== $session->department_id) {
             return response()->json([
-                'message' => 'You are not enrolled in the department hosting this lecture session.'
+                'message' => 'You are not authorized for this course.'
             ], 403);
         }
 
@@ -142,12 +127,26 @@ class AttendanceController extends Controller
 
         if ($alreadyMarked) {
             return response()->json([
-                'message' => 'Attendance has already been recorded for this session.'
+                'message' => 'Attendance has already been recorded.'
             ], 409);
         }
 
-        // 7. Optional Geofence Validation
-        if ($request->latitude !== null && $request->longitude !== null && $session->latitude !== null && $session->longitude !== null) {
+        // 7. Strict Server-Side Geofence Validation
+        $isVenueConfigured = ($session->latitude !== null && $session->longitude !== null);
+        if ($isVenueConfigured) {
+            // Venue configured + no GPS coordinates -> REJECT
+            if ($request->latitude === null || $request->longitude === null) {
+                AuditLog::create([
+                    'user_id' => $user->id,
+                    'action' => 'ATTENDANCE_SCAN_FAILED',
+                    'description' => "Student {$user->email} failed geofence check (missing GPS coordinates for configured venue).",
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ]);
+                return response()->json(['message' => 'You are outside the authorized attendance location.'], 400);
+            }
+
+            // Venue configured + outside radius -> REJECT
             $distance = $this->calculateDistance(
                 $session->latitude,
                 $session->longitude,
@@ -163,7 +162,7 @@ class AttendanceController extends Controller
                     'ip_address' => $request->ip(),
                     'user_agent' => $request->userAgent(),
                 ]);
-                return response()->json(['message' => "You are too far from the classroom location to mark attendance."], 400);
+                return response()->json(['message' => 'You are outside the authorized attendance location.'], 400);
             }
         }
 
@@ -173,7 +172,7 @@ class AttendanceController extends Controller
             $attendanceStatus = 'LATE';
         }
 
-        // 9. Persist Attendance Record
+        // 9. Persist Attendance Record (IDOR Protected: student_id strictly set from auth user)
         try {
             $attendance = Attendance::create([
                 'lecture_session_id' => $session->id,
@@ -208,7 +207,7 @@ class AttendanceController extends Controller
             // Catch database unique constraint violation gracefully
             if ($e->getCode() == 23000 || str_contains($e->getMessage(), 'Duplicate entry')) {
                 return response()->json([
-                    'message' => 'Attendance has already been recorded for this session.'
+                    'message' => 'Attendance has already been recorded.'
                 ], 409);
             }
             return response()->json(['message' => 'Failed to record attendance. Please try again.'], 500);

@@ -303,9 +303,30 @@ export default function StudentScanPage() {
         }
 
         setIsSubmitting(true);
+        let coords: { latitude?: number; longitude?: number } = {};
+
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+            try {
+                const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 2500,
+                        maximumAge: 0,
+                    });
+                });
+                coords = {
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude,
+                };
+            } catch {
+                // Geolocation denied or timed out; proceeding to backend server-side validation
+            }
+        }
+
         try {
             const res = await scanMutation.mutateAsync({
                 token: tokenString.trim(),
+                ...coords,
             });
 
             setScanResult({
